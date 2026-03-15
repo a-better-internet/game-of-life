@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modular Drone Synthesizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar and utilities */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #09090b; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        .bg-grid-pattern {
+            background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+        .bg-patch-pattern {
+            background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        /* Cable Management Styles */
+        #cables-svg {
+            pointer-events: none; /* Let clicks pass to modules/background */
+        }
+        .cable-group {
+            pointer-events: none; /* Default: click-through ghost mode */
+        }
+        body.delete-mode .cable-group {
+            pointer-events: stroke; /* Make clickable in delete mode */
+            cursor: pointer;
+        }
+        body.delete-mode .cable-group:hover .cable-visual {
+            stroke: #ef4444 !important; /* Turn red on hover for deletion */
+            stroke-width: 5px;
+            filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.8));
+        }
+
+        /* West Coast Patching Visuals */
+        body.patching-mode .port:not(.patching-source) {
+            border-color: #10b981 !important; /* highlight all other jacks green */
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.8) inset, 0 0 10px rgba(16, 185, 129, 0.8) !important;
+            background-color: #064e3b;
+        }
+        .patching-source {
+            border-color: #eab308 !important; /* yellow for source jack */
+            box-shadow: 0 0 10px rgba(234, 179, 8, 0.8) inset, 0 0 10px rgba(234, 179, 8, 0.8) !important;
+            background-color: #ca8a04 !important;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-300 font-mono overflow-hidden select-none h-screen w-full flex">
+
+    <!-- LEFT PANEL: Cellular Automata -->
+    <div class="w-96 shrink-0 border-r border-zinc-800 flex flex-col bg-zinc-900 shadow-2xl z-10">
+        <div class="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+            <div class="flex items-center gap-2">
+                <svg class="text-emerald-500 w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+                <h1 class="text-sm font-bold tracking-widest text-emerald-400">ORGANIC DRONE SYNTH</h1>
+            </div>
+            <button id="btn-start-audio" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1 rounded shadow-[0_0_10px_rgba(16,185,129,0.5)] animate-pulse">
+                START ENGINE
+            </button>
+        </div>
+
+        <div class="flex-1 p-6 flex flex-col items-center justify-center gap-6">
+            <div class="relative p-2 bg-zinc-950 rounded-lg border border-zinc-800 shadow-[inset_0_0_20px_rgba(0,0,0,1)]">
+                <canvas id="cgol-canvas" width="320" height="320" class="bg-black cursor-crosshair rounded"></canvas>
+                <div class="absolute inset-2 pointer-events-none opacity-10 bg-grid-pattern"></div>
+            </div>
+
+            <div class="flex gap-4">
+                <button id="btn-play" class="p-3 rounded-full border border-zinc-700 hover:border-zinc-500 transition-colors">
+                    <svg id="icon-play" class="w-5 h-5 ml-1" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <svg id="icon-stop" class="w-5 h-5 hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+                </button>
+                <button id="btn-randomize" class="p-3 rounded-full border border-zinc-700 hover:border-zinc-500 transition-colors">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+                <button id="btn-clear" class="p-3 rounded-full border border-red-900/50 hover:border-red-500 text-red-500/50 hover:text-red-500 transition-colors">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
+            </div>
+            
+            <div class="text-xs text-zinc-500 text-center max-w-[280px]">
+                <p>Hold <span class="text-zinc-300 font-bold">Shift</span> to delete patch cables. Click and drag on the canvas to seed cells. Entropy, Density, and Center of Mass generate CV.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL: Modular Patch Bay -->
+    <div class="flex-1 relative bg-[#111113]" id="patch-area">
+        <div class="absolute inset-0 pointer-events-none opacity-[0.03] bg-patch-pattern"></div>
+        
+        <svg id="cables-svg" class="absolute inset-0 w-full h-full z-20"></svg>
+
+        <div id="nodes-container"></div>
+
+        <!-- Start Overlay -->
+        <div id="overlay-start" class="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div class="bg-zinc-900 border border-emerald-500/30 p-8 rounded-lg shadow-2xl text-center max-w-md">
+                <svg class="w-12 h-12 text-emerald-500 mx-auto mb-4 animate-pulse" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <h2 class="text-xl font-bold text-white mb-2">DSP Engine Standby</h2>
+                <p class="text-zinc-400 text-sm mb-6">Web Audio requires user interaction to initialize. This environment utilizes advanced DSP nodes and routing logic.</p>
+                <button id="btn-init-audio" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)]">
+                    Initialize Audio Context
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. DSP & AUDIO GRAPH ARCHITECTURE
+        // ==========================================
+
+        const createWavefolderCurve = (folds = 5) => {
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            for (let i = 0; i < n_samples; ++i) {
+                const x = (i * 2) / n_samples - 1;
+                curve[i] = Math.sin(x * Math.PI * folds);
+            }
+            return curve;
+        };
+
+        class AudioGraphManager {
+            constructor() {
+                this.ctx = null;
+                this.modules = {};
+                this.masterGain = null;
+                this.compressor = null;
+            }
+
+            init() {
+                if (this.ctx) return;
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                this.compressor = this.ctx.createDynamicsCompressor();
+                this.compressor.threshold.value = -3;
+                this.compressor.knee.value = 10;
+                this.compressor.ratio.value = 12;
+                this.compressor.attack.value = 0.003;
+                this.compressor.release.value = 0.25;
+
+                const dcBlocker = this.ctx.createBiquadFilter();
+                dcBlocker.type = 'highpass';
+                dcBlocker.frequency.value = 20;
+
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.8;
+
+                dcBlocker.connect(this.compressor);
+                this.compressor.connect(this.masterGain);
+                this.masterGain.connect(this.ctx.destination);
+            }
+
+            addModule(id, type, params = {}) {
+                if (!this.ctx) return;
+                let mod = null;
+                switch (type) {
+                    case 'CGoLSource': mod = new CGoLSourceModule(this.ctx); break;
+                    case 'SwarmOsc': mod = new SwarmModule(this.ctx, params); break;
+                    case 'WaveFolder': mod = new WavefolderModule(this.ctx, params); break;
+                    case 'LowPass': mod = new FilterModule(this.ctx, params); break;
+                    case 'FDN': mod = new FDNModule(this.ctx, params); break;
+                    case 'VCA': mod = new VCAModule(this.ctx, params); break;
+                    case 'Output': mod = new OutputModule(this.ctx, this.compressor); break;
+                    case 'Attenuverter': mod = new AttenuverterModule(this.ctx, params); break;
+                    case 'LFO': mod = new LFOModule(this.ctx, params); break;
+                    case 'PingPong': mod = new PingPongDelayModule(this.ctx, params); break;
+                }
+                if (mod) this.modules[id] = mod;
+            }
+
+            updateParam(id, paramName, value) {
+                if (this.modules[id] && this.modules[id].setParam) {
+                    this.modules[id].setParam(paramName, value);
+                }
+            }
+
+            rebuildConnections(edges) {
+                if (!this.ctx) return;
+                Object.values(this.modules).forEach(m => m.disconnectAll());
+                edges.forEach(edge => {
+                    const src = this.modules[edge.from];
+                    const dest = this.modules[edge.to];
+                    if (src && dest) {
+                        src.connect(edge.fromPort, dest, edge.toPort);
+                    }
+                });
+            }
+
+            updateCGoLData(x, y, density, entropy) {
+                const cgol = Object.values(this.modules).find(m => m instanceof CGoLSourceModule);
+                if (cgol) cgol.updateData(x, y, density, entropy);
+            }
+        }
+
+        class BaseModule {
+            constructor(ctx) {
+                this.ctx = ctx;
+                this.inputs = {};
+                this.outputs = {};
+                this.connections = [];
+            }
+            // Gets either an input or an output generically (For West Coast patching)
+            getNode(portId) {
+                return this.outputs[portId] || this.inputs[portId];
+            }
+            connect(fromPort, destModule, toPort) {
+                const sourceNode = this.getNode(fromPort);
+                const destNode = destModule.getNode(toPort);
+                if (sourceNode && destNode) {
+                    try {
+                        // Ensure we don't try to call connect on a raw AudioParam if a user routes backward
+                        if (typeof sourceNode.connect === 'function') {
+                            sourceNode.connect(destNode);
+                            this.connections.push({ sourceNode, destNode });
+                        }
+                    } catch (e) {
+                        console.warn("Invalid connection flow", e);
+                    }
+                }
+            }
+            disconnectAll() {
+                this.connections.forEach(({ sourceNode, destNode }) => {
+                    try { sourceNode.disconnect(destNode); } catch (e) {}
+                });
+                this.connections = [];
+            }
+            destroy() {
+                this.disconnectAll();
+            }
+        }
+
+        class CGoLSourceModule extends BaseModule {
+            constructor(ctx) {
+                super(ctx);
+                this.sources = {
+                    'X': ctx.createConstantSource(),
+                    'Y': ctx.createConstantSource(),
+                    'Density': ctx.createConstantSource(),
+                    'Entropy': ctx.createConstantSource()
+                };
+                
+                this.outputs = {};
+                ['X', 'Y', 'Density', 'Entropy'].forEach(key => {
+                    this.sources[key].start();
+                    let lastNode = this.sources[key];
+                    for(let i=0; i<4; i++) {
+                        const lp = ctx.createBiquadFilter();
+                        lp.type = 'lowpass';
+                        lp.frequency.value = 0.5;
+                        lastNode.connect(lp);
+                        lastNode = lp;
+                    }
+                    this.outputs[key] = lastNode;
+                });
+            }
+            updateData(x, y, density, entropy) {
+                const t = this.ctx.currentTime;
+                this.sources['X'].offset.linearRampToValueAtTime(x * 2 - 1, t + 0.1);
+                this.sources['Y'].offset.linearRampToValueAtTime(y * 2 - 1, t + 0.1);
+                this.sources['Density'].offset.linearRampToValueAtTime(density, t + 0.1);
+                this.sources['Entropy'].offset.linearRampToValueAtTime(entropy, t + 0.1);
+            }
+        }
+
+        class SwarmModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.oscillators = [];
+                this.detuneGains = [];
+                this.masterGain = ctx.createGain();
+                this.masterGain.gain.value = 0.5 / 7;
+
+                this.pitchCV = ctx.createGain();
+                this.pitchCV.gain.value = 1200;
+                
+                this.spreadCV = ctx.createConstantSource();
+                this.spreadCV.offset.value = params.spread || 0.1;
+                this.spreadCV.start();
+
+                this.inputs['Pitch CV'] = this.pitchCV;
+                
+                const detuneMultipliers = [0, 1, -1, 2, -2, 3, -3];
+                for (let i = 0; i < 7; i++) {
+                    const osc = ctx.createOscillator();
+                    osc.type = 'triangle'; // Prevents harsh aliasing
+                    osc.frequency.value = params.pitch || 110;
+                    
+                    const detuneGain = ctx.createGain();
+                    detuneGain.gain.value = detuneMultipliers[i] * 50;
+                    
+                    this.spreadCV.connect(detuneGain);
+                    detuneGain.connect(osc.detune);
+                    this.pitchCV.connect(osc.detune);
+                    
+                    osc.connect(this.masterGain);
+                    osc.start();
+                    
+                    this.oscillators.push(osc);
+                    this.detuneGains.push(detuneGain);
+                }
+                
+                this.spreadCVPort = ctx.createGain(); 
+                this.spreadCVPort.gain.value = 1;
+                this.spreadCVPort.connect(this.spreadCV.offset);
+                this.inputs['Spread CV'] = this.spreadCVPort;
+
+                this.outputs['Audio Out'] = this.masterGain;
+            }
+            setParam(param, value) {
+                if (param === 'pitch') {
+                    this.oscillators.forEach(osc => osc.frequency.setTargetAtTime(value, this.ctx.currentTime, 0.05));
+                } else if (param === 'spread') {
+                    this.spreadCV.offset.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                }
+            }
+        }
+
+        class WavefolderModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.shaper = ctx.createWaveShaper();
+                this.shaper.curve = createWavefolderCurve(5);
+                this.shaper.oversample = '4x';
+                
+                this.inputGain = ctx.createGain();
+                this.inputGain.gain.value = params.drive || 1;
+                
+                this.driveCV = ctx.createGain();
+                this.driveCV.gain.value = 2;
+                this.driveCV.connect(this.inputGain.gain);
+
+                this.inputs['Audio In'] = this.inputGain;
+                this.inputs['Drive CV'] = this.driveCV;
+                this.outputs['Audio Out'] = this.shaper;
+                
+                this.inputGain.connect(this.shaper);
+            }
+            setParam(param, value) {
+                if (param === 'drive') {
+                    this.inputGain.gain.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                }
+            }
+        }
+
+        class FilterModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.filter = ctx.createBiquadFilter();
+                this.filter.type = 'lowpass';
+                this.filter.frequency.value = params.cutoff || 1000;
+                this.filter.Q.value = params.res || 2;
+
+                this.cvGain = ctx.createGain();
+                this.cvGain.gain.value = 3600;
+                this.cvGain.connect(this.filter.detune); // Modulate detune to prevent negative frequencies
+
+                this.inputs['Audio In'] = this.filter;
+                this.inputs['Cutoff CV'] = this.cvGain;
+                this.outputs['Audio Out'] = this.filter;
+            }
+            setParam(param, value) {
+                if (param === 'cutoff') this.filter.frequency.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'res') this.filter.Q.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+            }
+        }
+
+        class FDNModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.input = ctx.createGain();
+                this.output = ctx.createGain();
+                
+                this.feedbackLevel = ctx.createConstantSource();
+                this.feedbackLevel.offset.value = params.feedback || 0.7;
+                this.feedbackLevel.start();
+
+                this.inputs['Audio In'] = this.input;
+                this.inputs['Time CV'] = ctx.createGain();
+                
+                this.fbCVNode = ctx.createGain();
+                this.fbCVNode.gain.value = 1;
+                this.fbCVNode.connect(this.feedbackLevel.offset);
+                this.inputs['Feedback CV'] = this.fbCVNode;
+
+                this.outputs['Audio Out'] = this.output;
+
+                const times = [0.117, 0.173, 0.231, 0.287]; 
+                this.delays = times.map(t => {
+                    const d = ctx.createDelay(2.0);
+                    d.delayTime.value = t;
+                    return d;
+                });
+
+                this.filters = this.delays.map(() => {
+                    const f = ctx.createBiquadFilter();
+                    f.type = 'lowpass';
+                    f.frequency.value = 1500;
+                    return f;
+                });
+
+                this.hpfs = this.delays.map(() => {
+                    const f = ctx.createBiquadFilter();
+                    f.type = 'highpass';
+                    f.frequency.value = 100; 
+                    return f;
+                });
+
+                this.mixers = this.delays.map(() => {
+                    const g = ctx.createGain();
+                    g.gain.value = 0; // Initialize at 0 to prevent explosive feedback
+                    return g;
+                });
+
+                this.delays.forEach(d => this.input.connect(d));
+
+                for (let i = 0; i < 4; i++) {
+                    const nextI = (i + 1) % 4;
+                    this.delays[i].connect(this.filters[i]);
+                    this.filters[i].connect(this.hpfs[i]);
+                    this.hpfs[i].connect(this.mixers[i]);
+                    
+                    this.feedbackLevel.connect(this.mixers[i].gain);
+                    
+                    this.mixers[i].connect(this.delays[nextI]);
+                    this.mixers[i].connect(this.output);
+                }
+            }
+            setParam(param, value) {
+                if (param === 'feedback') this.feedbackLevel.offset.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+            }
+        }
+
+        class LFOModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.osc = ctx.createOscillator();
+                this.osc.type = 'sine';
+                this.osc.frequency.value = params.rate !== undefined ? params.rate : 1;
+                this.osc.start();
+
+                this.rateCV = ctx.createGain();
+                this.rateCV.gain.value = 10; // 1V = 10Hz scale
+                this.rateCV.connect(this.osc.frequency);
+
+                this.outputGain = ctx.createGain();
+                // Fix: Properly handle 0 as a valid depth value instead of defaulting to 1
+                this.outputGain.gain.value = params.depth !== undefined ? params.depth : 1;
+                
+                this.osc.connect(this.outputGain);
+
+                this.inputs['Rate CV'] = this.rateCV;
+                this.outputs['CV Out'] = this.outputGain;
+            }
+            setParam(param, value) {
+                if (param === 'rate') this.osc.frequency.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'depth') this.outputGain.gain.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'shape') {
+                    const shapes = ['sine', 'triangle', 'sawtooth', 'square'];
+                    this.osc.type = shapes[Math.floor(value)] || 'sine';
+                }
+            }
+        }
+
+        class PingPongDelayModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.input = ctx.createGain();
+                this.output = ctx.createGain();
+
+                // Parameters
+                this.delayTimeSource = ctx.createConstantSource();
+                this.delayTimeSource.offset.value = params.time || 0.4;
+                this.delayTimeSource.start();
+
+                this.feedbackSource = ctx.createConstantSource();
+                this.feedbackSource.offset.value = params.feedback || 0.6;
+                this.feedbackSource.start();
+
+                // Delay nodes (Max 3 seconds)
+                this.delayL = ctx.createDelay(3.0);
+                this.delayR = ctx.createDelay(3.0);
+                
+                this.delayTimeSource.connect(this.delayL.delayTime);
+                this.delayTimeSource.connect(this.delayR.delayTime);
+
+                this.feedbackGainL = ctx.createGain();
+                this.feedbackGainL.gain.value = 0; // CRITICAL FIX: Initialize to 0 to prevent explosive 1.0 + CV summing
+                this.feedbackGainR = ctx.createGain();
+                this.feedbackGainR.gain.value = 0; // CRITICAL FIX
+
+                // Add safety filters inside the ping pong loop to prevent DC rumble buildup
+                this.filterL = ctx.createBiquadFilter();
+                this.filterL.type = 'bandpass';
+                this.filterL.frequency.value = 1500;
+                this.filterL.Q.value = 0.5;
+
+                this.filterR = ctx.createBiquadFilter();
+                this.filterR.type = 'bandpass';
+                this.filterR.frequency.value = 1500;
+                this.filterR.Q.value = 0.5;
+
+                this.feedbackSource.connect(this.feedbackGainL.gain);
+                this.feedbackSource.connect(this.feedbackGainR.gain);
+
+                this.merger = ctx.createChannelMerger(2);
+
+                // Ping-Pong cross-routing
+                this.input.connect(this.delayL); // Initial tap goes Left
+                
+                this.delayL.connect(this.merger, 0, 0); // Left Output
+                this.delayL.connect(this.filterL); 
+                this.filterL.connect(this.feedbackGainL); 
+                this.feedbackGainL.connect(this.delayR); // Left feeds Right
+                
+                this.delayR.connect(this.merger, 0, 1); // Right Output
+                this.delayR.connect(this.filterR);
+                this.filterR.connect(this.feedbackGainR);
+                this.feedbackGainR.connect(this.delayL); // Right feeds Left
+
+                // Dry/Wet Mix logic
+                this.dryGain = ctx.createGain();
+                this.dryGain.gain.value = 1.0 - (params.mix || 0.5);
+                this.wetGain = ctx.createGain();
+                this.wetGain.gain.value = (params.mix || 0.5);
+
+                this.input.connect(this.dryGain);
+                this.merger.connect(this.wetGain);
+
+                this.dryGain.connect(this.output);
+                this.wetGain.connect(this.output);
+
+                // Exposed Ports
+                this.inputs['Audio In'] = this.input;
+                
+                this.timeCVPort = ctx.createGain();
+                this.timeCVPort.gain.value = 0.1; // Safety scale: drastically limits CV so LFO doesn't push delay into negative time
+                this.timeCVPort.connect(this.delayTimeSource.offset);
+                this.inputs['Time CV'] = this.timeCVPort;
+                
+                this.fbCVPort = ctx.createGain();
+                this.fbCVPort.connect(this.feedbackSource.offset);
+                this.inputs['Feedback CV'] = this.fbCVPort;
+
+                this.outputs['Audio Out'] = this.output;
+            }
+            setParam(param, value) {
+                if (param === 'time') this.delayTimeSource.offset.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'feedback') this.feedbackSource.offset.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'mix') {
+                    this.dryGain.gain.setTargetAtTime(1.0 - value, this.ctx.currentTime, 0.05);
+                    this.wetGain.gain.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                }
+            }
+        }
+
+        class VCAModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.vca = ctx.createGain();
+                this.vca.gain.value = params.level || 0;
+
+                this.cvInput = ctx.createGain();
+                this.cvInput.gain.value = 1;
+                this.cvInput.connect(this.vca.gain);
+
+                this.inputs['Audio In'] = this.vca;
+                this.inputs['Level CV'] = this.cvInput;
+                this.outputs['Audio Out'] = this.vca;
+            }
+            setParam(param, value) {
+                if (param === 'level') this.vca.gain.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+            }
+        }
+
+        class AttenuverterModule extends BaseModule {
+            constructor(ctx, params) {
+                super(ctx);
+                this.multiplier = ctx.createGain();
+                this.multiplier.gain.value = params.scale || 1;
+                
+                this.offset = ctx.createConstantSource();
+                this.offset.offset.value = params.offset || 0;
+                this.offset.start();
+
+                this.mixer = ctx.createGain();
+                
+                this.inputs['CV In'] = this.multiplier;
+                this.outputs['CV Out'] = this.mixer;
+
+                this.multiplier.connect(this.mixer);
+                this.offset.connect(this.mixer);
+            }
+            setParam(param, value) {
+                if (param === 'scale') this.multiplier.gain.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+                if (param === 'offset') this.offset.offset.setTargetAtTime(value, this.ctx.currentTime, 0.05);
+            }
+        }
+
+        class OutputModule extends BaseModule {
+            constructor(ctx, destination) {
+                super(ctx);
+                this.inputs['Main In'] = destination;
+            }
+        }
+
+        // ==========================================
+        // 2. STATE & CONFIG
+        // ==========================================
+
+        const UI_MODULE_CONFIG = {
+            'CGoLSource': { name: 'CGoL Matrix', width: 140, inputs: [], outputs: ['X', 'Y', 'Density', 'Entropy'], params: [] },
+            'SwarmOsc': { name: 'Swarm Osc', width: 160, inputs: ['Pitch CV', 'Spread CV'], outputs: ['Audio Out'], params: [
+                { id: 'pitch', name: 'Base Freq', min: 20, max: 500, default: 65 },
+                { id: 'spread', name: 'Spread', min: 0, max: 2, default: 0.1 }
+            ] },
+            'WaveFolder': { name: 'Wave Folder', width: 150, inputs: ['Audio In', 'Drive CV'], outputs: ['Audio Out'], params: [
+                { id: 'drive', name: 'Drive', min: 0.1, max: 3, default: 1 }
+            ] },
+            'LowPass': { name: 'Low Pass VCF', width: 150, inputs: ['Audio In', 'Cutoff CV'], outputs: ['Audio Out'], params: [
+                { id: 'cutoff', name: 'Cutoff', min: 20, max: 8000, default: 1000 },
+                { id: 'res', name: 'Resonance', min: 0, max: 15, default: 2 }
+            ] },
+            'LFO': { name: 'LFO', width: 130, inputs: ['Rate CV'], outputs: ['CV Out'], params: [
+                { id: 'rate', name: 'Rate (Hz)', min: 0.1, max: 20, default: 0.5 },
+                { id: 'depth', name: 'Depth', min: 0, max: 2, default: 0.2 },
+                { id: 'shape', name: 'Shape 0=Si 3=Sq', min: 0, max: 3.99, default: 0 } // 0=sine, 1=tri, 2=saw, 3=sq
+            ] },
+            'PingPong': { name: 'Ping Pong Delay', width: 170, inputs: ['Audio In', 'Time CV', 'Feedback CV'], outputs: ['Audio Out'], params: [
+                { id: 'time', name: 'Time', min: 0.05, max: 2.0, default: 0.4 },
+                { id: 'feedback', name: 'Feedback', min: 0, max: 0.95, default: 0.6 },
+                { id: 'mix', name: 'Mix', min: 0, max: 1, default: 0.5 }
+            ] },
+            'FDN': { name: 'FDN Reverb', width: 150, inputs: ['Audio In', 'Feedback CV'], outputs: ['Audio Out'], params: [
+                { id: 'feedback', name: 'Feedback', min: 0, max: 0.98, default: 0.7 }
+            ] },
+            'VCA': { name: 'VCA', width: 120, inputs: ['Audio In', 'Level CV'], outputs: ['Audio Out'], params: [
+                { id: 'level', name: 'Base Level', min: 0, max: 1, default: 0 }
+            ] },
+            'Attenuverter': { name: 'Attenuverter', width: 140, inputs: ['CV In'], outputs: ['CV Out'], params: [
+                { id: 'scale', name: 'Scale', min: -2, max: 2, default: 1 },
+                { id: 'offset', name: 'Offset', min: -1, max: 1, default: 0 }
+            ] },
+            'Output': { name: 'Master Out', width: 120, inputs: ['Main In'], outputs: [], params: [] }
+        };
+
+        const CABLE_COLORS = {
+            cv: '#10b981', // emerald
+            audio: '#ef4444', // red
+            default: '#71717a' // zinc
+        };
+
+        const STATE = {
+            gridSize: 40,
+            grid: [],
+            isPlaying: false,
+            isDrawingOnCanvas: false,
+            lastDrawnCell: {x: -1, y: -1},
+            audioStarted: false,
+            audioGraph: new AudioGraphManager(),
+            nodes: [
+                { id: 'cgol', type: 'CGoLSource', x: 20, y: 20, params: {} },
+                { id: 'swarm1', type: 'SwarmOsc', x: 200, y: 20, params: { pitch: 65, spread: 0.1 } },
+                { id: 'folder', type: 'WaveFolder', x: 400, y: 20, params: { drive: 2 } },
+                { id: 'filter', type: 'LowPass', x: 600, y: 20, params: { cutoff: 500, res: 4 } },
+                { id: 'vca', type: 'VCA', x: 800, y: 20, params: { level: 0 } },
+                { id: 'lfo1', type: 'LFO', x: 20, y: 300, params: { rate: 0.5, depth: 0.2, shape: 0 } },
+                { id: 'att1', type: 'Attenuverter', x: 200, y: 300, params: { scale: 0.5, offset: 0.5 } },
+                { id: 'pingpong', type: 'PingPong', x: 800, y: 200, params: { time: 0.35, feedback: 0.6, mix: 0.5 } },
+                { id: 'fdn', type: 'FDN', x: 1000, y: 200, params: { feedback: 0.8 } },
+                { id: 'out', type: 'Output', x: 1000, y: 20, params: {} }
+            ],
+            edges: [
+                { id: 'e1', from: 'cgol', fromPort: 'Density', fromType: 'out', to: 'att1', toPort: 'CV In', toType: 'in' },
+                { id: 'e2', from: 'att1', fromPort: 'CV Out', fromType: 'out', to: 'vca', toPort: 'Level CV', toType: 'in' },
+                { id: 'e3', from: 'cgol', fromPort: 'Entropy', fromType: 'out', to: 'folder', toPort: 'Drive CV', toType: 'in' },
+                { id: 'e4', from: 'cgol', fromPort: 'X', fromType: 'out', to: 'filter', toPort: 'Cutoff CV', toType: 'in' },
+                { id: 'e5', from: 'cgol', fromPort: 'Y', fromType: 'out', to: 'swarm1', toPort: 'Spread CV', toType: 'in' },
+                { id: 'e6', from: 'swarm1', fromPort: 'Audio Out', fromType: 'out', to: 'folder', toPort: 'Audio In', toType: 'in' },
+                { id: 'e7', from: 'folder', fromPort: 'Audio Out', fromType: 'out', to: 'filter', toPort: 'Audio In', toType: 'in' },
+                { id: 'e8', from: 'filter', fromPort: 'Audio Out', fromType: 'out', to: 'vca', toPort: 'Audio In', toType: 'in' },
+                
+                // Route through Ping Pong then FDN Reverb
+                { id: 'e9', from: 'vca', fromPort: 'Audio Out', fromType: 'out', to: 'pingpong', toPort: 'Audio In', toType: 'in' },
+                { id: 'e10', from: 'pingpong', fromPort: 'Audio Out', fromType: 'out', to: 'fdn', toPort: 'Audio In', toType: 'in' },
+                
+                // LFO slightly modulating Ping Pong Time
+                { id: 'e11', from: 'lfo1', fromPort: 'CV Out', fromType: 'out', to: 'pingpong', toPort: 'Time CV', toType: 'in' },
+
+                { id: 'e12', from: 'pingpong', fromPort: 'Audio Out', fromType: 'out', to: 'out', toPort: 'Main In', toType: 'in' },
+                { id: 'e13', from: 'fdn', fromPort: 'Audio Out', fromType: 'out', to: 'out', toPort: 'Main In', toType: 'in' }
+            ],
+            draggingNode: null,
+            dragOffset: { x: 0, y: 0 },
+            connecting: null,
+            mousePos: { x: 0, y: 0 },
+            cgolInterval: null
+        };
+
+        // Initialize Grid
+        for (let i = 0; i < STATE.gridSize; i++) {
+            STATE.grid.push(new Array(STATE.gridSize).fill(0));
+        }
+
+        // ==========================================
+        // 3. UI RENDERING & LOGIC
+        // ==========================================
+
+        const canvas = document.getElementById('cgol-canvas');
+        const ctx = canvas.getContext('2d');
+        const nodesContainer = document.getElementById('nodes-container');
+        const cablesSvg = document.getElementById('cables-svg');
+        const patchArea = document.getElementById('patch-area');
+
+        function drawGrid() {
+            const cw = canvas.width;
+            const ch = canvas.height;
+            const cellW = cw / STATE.gridSize;
+            const cellH = ch / STATE.gridSize;
+
+            ctx.fillStyle = '#09090b';
+            ctx.fillRect(0, 0, cw, ch);
+
+            ctx.fillStyle = '#10b981';
+            for (let y = 0; y < STATE.gridSize; y++) {
+                for (let x = 0; x < STATE.gridSize; x++) {
+                    if (STATE.grid[y][x]) {
+                        ctx.fillRect(x * cellW, y * cellH, cellW - 1, cellH - 1);
+                    }
+                }
+            }
+        }
+
+        function computeNextGen() {
+            const currentGrid = STATE.grid;
+            const nextGrid = currentGrid.map(arr => [...arr]);
+            let activeCount = 0;
+            let sumX = 0, sumY = 0;
+            const localDensities = [];
+
+            for (let y = 0; y < STATE.gridSize; y++) {
+                for (let x = 0; x < STATE.gridSize; x++) {
+                    let neighbors = 0;
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            if (i === 0 && j === 0) continue;
+                            const row = (y + i + STATE.gridSize) % STATE.gridSize;
+                            const col = (x + j + STATE.gridSize) % STATE.gridSize;
+                            neighbors += currentGrid[row][col];
+                        }
+                    }
+                    
+                    const isAlive = currentGrid[y][x];
+                    if (isAlive && (neighbors < 2 || neighbors > 3)) nextGrid[y][x] = 0;
+                    else if (!isAlive && neighbors === 3) nextGrid[y][x] = 1;
+
+                    if (nextGrid[y][x]) {
+                        activeCount++;
+                        sumX += x;
+                        sumY += y;
+                    }
+
+                    localDensities.push(neighbors);
+                }
+            }
+
+            const density = activeCount / (STATE.gridSize * STATE.gridSize);
+            const cmX = activeCount > 0 ? (sumX / activeCount) / STATE.gridSize : 0.5;
+            const cmY = activeCount > 0 ? (sumY / activeCount) / STATE.gridSize : 0.5;
+            
+            const hist = new Array(9).fill(0);
+            localDensities.forEach(d => hist[d]++);
+            let entropy = 0;
+            hist.forEach(count => {
+                if (count > 0) {
+                    const p = count / (STATE.gridSize * STATE.gridSize);
+                    entropy -= p * Math.log2(p);
+                }
+            });
+            const normalizedEntropy = entropy / Math.log2(9);
+
+            if (STATE.audioStarted) {
+                STATE.audioGraph.updateCGoLData(cmX, cmY, density, normalizedEntropy);
+            }
+
+            STATE.grid = nextGrid;
+            drawGrid();
+        }
+
+        // --- Event Listeners: Canvas ---
+        function paintCell(e, isClick = false) {
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor(((e.clientX - rect.left) / rect.width) * STATE.gridSize);
+            const y = Math.floor(((e.clientY - rect.top) / rect.height) * STATE.gridSize);
+
+            if (x >= 0 && x < STATE.gridSize && y >= 0 && y < STATE.gridSize) {
+                if (!isClick && STATE.lastDrawnCell.x === x && STATE.lastDrawnCell.y === y) return;
+                
+                if (isClick) {
+                    STATE.grid[y][x] = STATE.grid[y][x] ? 0 : 1;
+                } else {
+                    STATE.grid[y][x] = 1;
+                }
+                STATE.lastDrawnCell = { x, y };
+                drawGrid();
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            STATE.isDrawingOnCanvas = true;
+            paintCell(e, true);
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if (STATE.isDrawingOnCanvas) paintCell(e, false);
+        });
+        window.addEventListener('mouseup', () => {
+            STATE.isDrawingOnCanvas = false;
+            STATE.lastDrawnCell = { x: -1, y: -1 };
+        });
+
+        // --- Event Listeners: Controls ---
+        document.getElementById('btn-play').addEventListener('click', (e) => {
+            STATE.isPlaying = !STATE.isPlaying;
+            const btn = e.currentTarget;
+            if (STATE.isPlaying) {
+                btn.classList.replace('border-zinc-700', 'border-emerald-500');
+                btn.classList.add('text-emerald-500', 'bg-emerald-950/30');
+                document.getElementById('icon-play').classList.add('hidden');
+                document.getElementById('icon-stop').classList.remove('hidden');
+                STATE.cgolInterval = setInterval(computeNextGen, 100);
+            } else {
+                btn.classList.replace('border-emerald-500', 'border-zinc-700');
+                btn.classList.remove('text-emerald-500', 'bg-emerald-950/30');
+                document.getElementById('icon-play').classList.remove('hidden');
+                document.getElementById('icon-stop').classList.add('hidden');
+                clearInterval(STATE.cgolInterval);
+            }
+        });
+
+        document.getElementById('btn-randomize').addEventListener('click', () => {
+            for (let y = 0; y < STATE.gridSize; y++) {
+                for (let x = 0; x < STATE.gridSize; x++) {
+                    STATE.grid[y][x] = Math.random() > 0.8 ? 1 : 0;
+                }
+            }
+            drawGrid();
+        });
+
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            for (let y = 0; y < STATE.gridSize; y++) {
+                for (let x = 0; x < STATE.gridSize; x++) {
+                    STATE.grid[y][x] = 0;
+                }
+            }
+            drawGrid();
+        });
+
+        // --- Event Listeners: Keyboard Modifiers (Delete Mode) ---
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                document.body.classList.add('delete-mode');
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                document.body.classList.remove('delete-mode');
+            }
+        });
+
+        cablesSvg.addEventListener('click', (e) => {
+            if (document.body.classList.contains('delete-mode')) {
+                const group = e.target.closest('g.cable-group');
+                if (group) {
+                    const edgeId = group.dataset.edgeId;
+                    STATE.edges = STATE.edges.filter(edge => edge.id !== edgeId);
+                    if (STATE.audioStarted) STATE.audioGraph.rebuildConnections(STATE.edges);
+                    drawCables();
+                }
+            }
+        });
+
+        // --- Audio Initialization ---
+        function startAudio() {
+            if (!STATE.audioStarted) {
+                STATE.audioGraph.init();
+                STATE.nodes.forEach(n => STATE.audioGraph.addModule(n.id, n.type, n.params));
+                STATE.audioGraph.rebuildConnections(STATE.edges);
+                STATE.audioStarted = true;
+                
+                document.getElementById('overlay-start').style.display = 'none';
+                document.getElementById('btn-start-audio').style.display = 'none';
+            }
+        }
+        document.getElementById('btn-start-audio').addEventListener('click', startAudio);
+        document.getElementById('btn-init-audio').addEventListener('click', startAudio);
+
+        // --- Exact DOM Rect Measurement for Zero-Offset Cables ---
+        function getPortCoords(nodeId, portId, type) {
+            const portEl = document.querySelector(`.port[data-node="${nodeId}"][data-port="${portId}"][data-type="${type}"]`);
+            if (portEl) {
+                const patchRect = patchArea.getBoundingClientRect();
+                const portRect = portEl.getBoundingClientRect();
+                // Get absolute center of the jack relative to the patch bay
+                return {
+                    x: portRect.left - patchRect.left + (portRect.width / 2),
+                    y: portRect.top - patchRect.top + (portRect.height / 2)
+                };
+            }
+            return { x: 0, y: 0 };
+        }
+
+        // --- Gravity Physics Algorithm ---
+        function getGravityPath(start, end) {
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            // Slack scales with distance so short cables are tight and long cables droop
+            const slack = Math.min(200, (distance * 0.4) + 20);
+            
+            // Both control points hang strictly below their respective jacks
+            return `M ${start.x} ${start.y} C ${start.x} ${start.y + slack}, ${end.x} ${end.y + slack}, ${end.x} ${end.y}`;
+        }
+
+        function drawCables() {
+            let svgContent = '';
+            
+            STATE.edges.forEach(edge => {
+                const start = getPortCoords(edge.from, edge.fromPort, edge.fromType);
+                const end = getPortCoords(edge.to, edge.toPort, edge.toType);
+                const pathData = getGravityPath(start, end);
+                
+                let color = CABLE_COLORS.default;
+                if (edge.from === 'cgol') color = CABLE_COLORS.cv;
+                if (edge.fromPort.includes('Audio')) color = CABLE_COLORS.audio;
+                
+                // Group with Hit Box Pattern
+                svgContent += `
+                    <g class="cable-group" data-edge-id="${edge.id}">
+                        <!-- Invisible Hit Path (20px wide) for easy interactions -->
+                        <path d="${pathData}" fill="none" stroke="transparent" stroke-width="20" stroke-linecap="round" />
+                        <!-- Visible Colored Path -->
+                        <path class="cable-visual transition-all duration-150" 
+                            d="${pathData}" fill="none" stroke="${color}" stroke-width="3"
+                            class="opacity-80" stroke-linecap="round" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));"
+                        />
+                    </g>`;
+            });
+
+            // Draw active connecting ghost cable (West Coast mode)
+            if (STATE.connecting) {
+                const p = getPortCoords(STATE.connecting.nodeId, STATE.connecting.portId, STATE.connecting.type);
+                const start = p;
+                const end = STATE.mousePos;
+                
+                const pathData = getGravityPath(start, end);
+
+                svgContent += `
+                    <path
+                        d="${pathData}"
+                        fill="none" stroke="#eab308" stroke-width="4" class="opacity-80" stroke-linecap="round"
+                    />`;
+            }
+
+            cablesSvg.innerHTML = svgContent;
+            updatePortIndicators();
+        }
+
+        function updatePortIndicators() {
+            document.querySelectorAll('.port-indicator').forEach(el => el.remove());
+            
+            STATE.edges.forEach(edge => {
+                const inPortEl = document.querySelector(`.port[data-node="${edge.to}"][data-port="${edge.toPort}"][data-type="${edge.toType}"]`);
+                const outPortEl = document.querySelector(`.port[data-node="${edge.from}"][data-port="${edge.fromPort}"][data-type="${edge.fromType}"]`);
+                
+                const indicatorHtml = '<div class="port-indicator absolute inset-[3px] rounded-full bg-zinc-400 pointer-events-none"></div>';
+                if (inPortEl && !inPortEl.querySelector('.port-indicator')) inPortEl.insertAdjacentHTML('beforeend', indicatorHtml);
+                if (outPortEl && !outPortEl.querySelector('.port-indicator')) outPortEl.insertAdjacentHTML('beforeend', indicatorHtml);
+            });
+        }
+
+        function updateNodeParam(nodeId, paramId, value) {
+            const node = STATE.nodes.find(n => n.id === nodeId);
+            if(node) {
+                node.params[paramId] = value;
+                if (STATE.audioStarted) STATE.audioGraph.updateParam(nodeId, paramId, value);
+            }
+        }
+
+        function buildNodesDOM() {
+            nodesContainer.innerHTML = '';
+            
+            STATE.nodes.forEach(node => {
+                const config = UI_MODULE_CONFIG[node.type];
+                
+                const nodeEl = document.createElement('div');
+                nodeEl.className = 'absolute bg-zinc-800 border border-zinc-700 rounded shadow-2xl flex flex-col z-10 node-container';
+                nodeEl.style.left = node.x + 'px';
+                nodeEl.style.top = node.y + 'px';
+                nodeEl.style.width = config.width + 'px';
+                nodeEl.dataset.id = node.id;
+
+                // Header
+                let html = `
+                    <div class="node-header bg-zinc-900 border-b border-zinc-700 px-2 py-1.5 flex justify-between items-center cursor-move rounded-t">
+                        <span class="text-[10px] font-bold tracking-widest text-zinc-400 select-none uppercase pointer-events-none">${config.name}</span>
+                        <div class="flex gap-1 pointer-events-none">
+                            <div class="w-1.5 h-1.5 rounded-full bg-zinc-700 shadow-[inset_0_1px_1px_rgba(0,0,0,0.5)]"></div>
+                            <div class="w-1.5 h-1.5 rounded-full bg-zinc-700 shadow-[inset_0_1px_1px_rgba(0,0,0,0.5)]"></div>
+                        </div>
+                    </div>`;
+
+                // Inputs
+                html += '<div class="flex justify-around pt-3 pb-1 px-2">';
+                config.inputs.forEach(port => {
+                    html += `
+                        <div class="flex flex-col items-center">
+                            <div class="port w-4 h-4 rounded-full bg-black border-2 border-zinc-500 cursor-crosshair hover:bg-zinc-700 hover:border-white transition-colors relative shadow-[inset_0_2px_4px_rgba(0,0,0,1)]"
+                                 data-node="${node.id}" data-port="${port}" data-type="in"></div>
+                            <span class="text-[8px] text-zinc-500 mt-1 uppercase text-center w-min leading-tight select-none">${port}</span>
+                        </div>`;
+                });
+                html += '</div>';
+
+                // Params / Knobs container
+                html += '<div class="flex-1 flex flex-col items-center justify-center py-2 px-2 knob-container min-h-[40px]"></div>';
+
+                // Outputs
+                html += '<div class="flex justify-around pb-3 pt-1 px-2 border-t border-zinc-700/50 mt-auto bg-zinc-800/50">';
+                config.outputs.forEach(port => {
+                    html += `
+                        <div class="flex flex-col items-center">
+                            <span class="text-[8px] text-zinc-500 mb-1 uppercase text-center w-min leading-tight select-none">${port}</span>
+                            <div class="port w-4 h-4 rounded-full bg-black border-2 border-zinc-500 cursor-crosshair hover:bg-emerald-700 hover:border-emerald-300 transition-colors relative shadow-[inset_0_2px_4px_rgba(0,0,0,1)]"
+                                 data-node="${node.id}" data-port="${port}" data-type="out"></div>
+                        </div>`;
+                });
+                html += '</div>';
+
+                nodeEl.innerHTML = html;
+                
+                // Add Knobs programmatically to bind events
+                const knobsContainer = nodeEl.querySelector('.knob-container');
+                config.params.forEach(p => {
+                    const initialVal = node.params[p.id] !== undefined ? node.params[p.id] : p.default;
+                    const knobWrapper = document.createElement('div');
+                    knobWrapper.className = 'flex flex-col items-center my-2';
+                    
+                    const knobUI = document.createElement('div');
+                    knobUI.className = 'w-10 h-10 rounded-full bg-zinc-800 border-2 border-zinc-600 shadow-xl cursor-ns-resize flex items-center justify-center relative group';
+                    
+                    const rotater = document.createElement('div');
+                    rotater.className = 'w-full h-full rounded-full absolute pointer-events-none';
+                    rotater.innerHTML = '<div class="w-1 h-3 bg-white mx-auto mt-1 rounded-full shadow-[0_0_5px_rgba(255,255,255,0.8)]"></div>';
+                    
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'absolute -top-6 bg-black text-xs px-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-zinc-300 whitespace-nowrap z-50';
+                    
+                    const label = document.createElement('span');
+                    label.className = 'text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-semibold select-none';
+                    label.innerText = p.name;
+
+                    knobUI.appendChild(rotater);
+                    knobUI.appendChild(tooltip);
+                    knobWrapper.appendChild(knobUI);
+                    knobWrapper.appendChild(label);
+                    knobsContainer.appendChild(knobWrapper);
+
+                    // Knob Logic
+                    let isDraggingKnob = false;
+                    let startY = 0;
+                    let currentVal = initialVal;
+
+                    const updateVisuals = (val) => {
+                        const rotation = ((val - p.min) / (p.max - p.min)) * 270 - 135;
+                        rotater.style.transform = `rotate(${rotation}deg)`;
+                        tooltip.innerText = val.toFixed(2);
+                    };
+                    updateVisuals(currentVal);
+
+                    knobUI.addEventListener('mousedown', (e) => {
+                        isDraggingKnob = true;
+                        startY = e.clientY;
+                        e.preventDefault();
+                    });
+
+                    window.addEventListener('mousemove', (e) => {
+                        if (!isDraggingKnob) return;
+                        const delta = startY - e.clientY;
+                        startY = e.clientY; // update relative
+                        
+                        const range = p.max - p.min;
+                        const sensitivity = 0.005;
+                        currentVal = Math.max(p.min, Math.min(p.max, currentVal + (delta * range * sensitivity)));
+                        
+                        updateVisuals(currentVal);
+                        updateNodeParam(node.id, p.id, currentVal);
+                    });
+
+                    window.addEventListener('mouseup', () => {
+                        isDraggingKnob = false;
+                    });
+                });
+
+                if (config.params.length === 0 && config.outputs.length > 0) {
+                    knobsContainer.innerHTML = '<div class="h-4"></div>';
+                }
+
+                nodesContainer.appendChild(nodeEl);
+            });
+        }
+
+        // --- Dragging & Patching Events ---
+        patchArea.addEventListener('mousedown', (e) => {
+            const header = e.target.closest('.node-header');
+            if (header) {
+                const nodeEl = header.closest('.node-container');
+                const nodeId = nodeEl.dataset.id;
+                const node = STATE.nodes.find(n => n.id === nodeId);
+                
+                STATE.draggingNode = {
+                    id: nodeId,
+                    el: nodeEl,
+                    offsetX: e.clientX - node.x,
+                    offsetY: e.clientY - node.y
+                };
+                return;
+            }
+
+            const port = e.target.closest('.port');
+            if (port) {
+                e.stopPropagation();
+                const rect = patchArea.getBoundingClientRect();
+                
+                STATE.connecting = {
+                    nodeId: port.dataset.node,
+                    portId: port.dataset.port,
+                    type: port.dataset.type
+                };
+                STATE.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                
+                // West Coast UI Activation
+                document.body.classList.add('patching-mode');
+                port.classList.add('patching-source');
+                
+                drawCables();
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (STATE.draggingNode) {
+                const node = STATE.nodes.find(n => n.id === STATE.draggingNode.id);
+                node.x = e.clientX - STATE.draggingNode.offsetX;
+                node.y = e.clientY - STATE.draggingNode.offsetY;
+                STATE.draggingNode.el.style.left = node.x + 'px';
+                STATE.draggingNode.el.style.top = node.y + 'px';
+                
+                // Redraw instantly to update exact port coordinates attached to dragging node
+                drawCables();
+            }
+
+            if (STATE.connecting) {
+                const rect = patchArea.getBoundingClientRect();
+                STATE.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                drawCables();
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            STATE.draggingNode = null;
+
+            if (STATE.connecting) {
+                const port = e.target.closest('.port');
+                if (port) {
+                    const targetNodeId = port.dataset.node;
+                    const targetPortId = port.dataset.port;
+                    const targetType = port.dataset.type;
+
+                    // West Coast Mode rule: Any jack to any jack!
+                    // Just prevent connecting a single port to itself.
+                    if (!(STATE.connecting.nodeId === targetNodeId && STATE.connecting.portId === targetPortId)) {
+                        
+                        STATE.edges.push({
+                            id: `e_${Date.now()}`,
+                            from: STATE.connecting.nodeId, 
+                            fromPort: STATE.connecting.portId,
+                            fromType: STATE.connecting.type,
+                            to: targetNodeId, 
+                            toPort: targetPortId,
+                            toType: targetType
+                        });
+                        
+                        if (STATE.audioStarted) STATE.audioGraph.rebuildConnections(STATE.edges);
+                    }
+                }
+                
+                STATE.connecting = null;
+                
+                // Deactivate West Coast UI
+                document.body.classList.remove('patching-mode');
+                document.querySelectorAll('.patching-source').forEach(el => el.classList.remove('patching-source'));
+                
+                drawCables();
+            }
+        });
+
+        // Initialize Application
+        setTimeout(() => {
+            drawGrid();
+            buildNodesDOM();
+            drawCables();
+        }, 50); // Small delay to ensure flex layout finishes before measuring DOM coordinates
+
+    </script>
+</body>
+</html>
